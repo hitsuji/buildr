@@ -7,6 +7,7 @@ import os
 import sys
 import re
 import subprocess as sp
+import urllib3
 
 from ply import lex, yacc
 
@@ -14,6 +15,8 @@ from ply import lex, yacc
 
 
 # Retain a copy so we don't unneccessarily waste time recreating them
+http          = urllib3.PoolManager()
+
 global_lexer  = None
 global_parser = None
 tokens        = None
@@ -48,6 +51,69 @@ def process_file( file_path, script_vars={}, compress=False, escape=None ):
         content = content.replace( '\\', '\\\\' ).replace( escape, "\\{0}".format( escape ) )
 
     return content
+
+
+
+
+def import_file( filepath ):
+    # global http
+
+    # if filepath.startswith( 'http://' )
+    #     respone = http.request( 'GET', filepath )
+    #     print( respone.status, file=sys.stderr )
+
+    #     assert False
+
+    # TODO: proto = file:// for files from root
+
+
+    if filepath.startswith( '/' ):
+        filepath = filepath[1:]
+    else:
+        filepath = '{0}/{1}'.format( p.lexer.dir_path, filepath )
+
+    return process_file( filepath, compress=True, escape="'" )
+
+
+
+#TODO: catch url contents
+def include_file( filepath, dirpath, script_vars ):
+    global http
+
+    # TODO: proto = file:// for files from root
+    proto = r'^http(s)?://'
+
+    if re.match( proto, filepath ):
+        response = http.request( 'GET', filepath )
+
+        if response.status != 200:
+            msg = 'Error while including: {0}, status: {1}'.format( filepath, response.status )
+            print( msg, file=sys.stderr )
+            exit( 1 )
+
+        content_type = response.headers['content-type']
+        content_type = content_type.split( '; ' )
+
+        charset = 'utf-8'
+
+        for ct in content_type:
+            match = re.match( r'^charset=(.*?)$', ct )
+
+            if match:
+                charset = match.group( 1 )
+                break
+
+        return response.data.decode( charset )
+
+
+
+    if filepath.startswith( '/' ):
+        path = filepath[1:]
+    else:
+        path = '{0}/{1}'.format( dirpath, filepath )
+
+    return js_processor( path, script_vars )
+
 
 
 
@@ -94,8 +160,8 @@ def create_lexer( file_path, script_vars ):
         'NEW_LINE',
         'COMMENT',
         'SEPARATOR',
-        'LPAREN',
-        'RPAREN',
+        # 'LPAREN',
+        # 'RPAREN',
         'STRING',
         'ID' ] + list( reserved.values() )
 
@@ -103,8 +169,8 @@ def create_lexer( file_path, script_vars ):
     t_DELIMITER = r';'
     t_SEPARATOR = r','
     t_COMMENT   = r'\#.*?\n'
-    t_LPAREN    = r'\('
-    t_RPAREN    = r'\)'
+    # t_LPAREN    = r'\('
+    # t_RPAREN    = r'\)'
 
 
 
@@ -222,12 +288,10 @@ def create_parser():
                  | INCLUDE string block'''
 
         # TODO: actually include
-        if p[2].startswith( '/' ):
-            path = p[2][1:]
-        else:
-            path = '{0}/{1}'.format( p.lexer.dir_path, p[2] )
 
-        p[0] = '{0}\n{1}'.format( js_processor( path, p.lexer.script_vars ), p[3] )
+        data = include_file( p[2], p.lexer.dir_path, p.lexer.script_vars )
+
+        p[0] = '{0}\n{1}'.format( data, p[3] )
 
 
     def p_echo( p ):
@@ -237,7 +301,7 @@ def create_parser():
 
         string = p[2]
 
-        # TODO: move to p_string
+        # TODO: move to p_string ???
         importer = r'\$\{(.*?)\}'
 
         while True:
@@ -247,12 +311,7 @@ def create_parser():
 
             source, value = match.group( 0 ), match.group( 1 )
 
-            if value.startswith( '/' ):
-                value = value[1:]
-            else:
-                value = '{0}/{1}'.format( p.lexer.dir_path, value )
-
-            value = process_file( value, compress=True, escape="'" )
+            value = import_file( value )
 
             string = string.replace( source, value, 1 )
 
@@ -277,7 +336,7 @@ def create_parser():
 
 
     #scopes with params
-    def p_begin_scope_param_1( p ):
+    def p_begin_scope_params_1( p ):
         'begin_scope_params : SCOPE_BEGIN string'
 
         p[0] = p[2]
@@ -296,16 +355,16 @@ def create_parser():
         p[0] = p[1]
 
 
-    def p_end_scope_param( p ):
+    def p_end_scope_params_1( p ):
         'end_scope_params : SCOPE_END string'
 
         p[0] = p[2]
 
 
-    def p_end_scope_params( p ):
-        'end_scope_params : end_scope_params string'
+    def p_end_scope_params_2( p ):
+        'end_scope_params : end_scope_params separator string'
 
-        p[0] = p[1] + ',' + p[2]
+        p[0] = p[1] + ',' + p[3]
 
 
     def p_end_scope_with_params( p ):

@@ -5,7 +5,7 @@ buildr is a simple JavaScript pre-processor for web applications. It also allows
 the embedding of compressed css, sass, html and other formats. The
 pre-processing language is developed with python ply.
 
-There are a number of dependencies: python3, sass ( & ruby ), java
+There are a number of dependencies: python3 ( & urllib3 ), sass ( & ruby ), java
 
 
 
