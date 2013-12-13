@@ -154,6 +154,14 @@ def create_lexer( file_path, script_vars ):
     }
 
 
+    # A list of js reserved ids that we'll recognise in buildr
+    js_reserved = {
+        'window':    'STRING',
+        'undefined': 'STRING'
+    }
+
+
+
     tokens = [
         'BLOCK',
         'DELIMITER',
@@ -212,6 +220,12 @@ def create_lexer( file_path, script_vars ):
 
         # cast the id to a reserved token if its found in the dict
         t.type = reserved.get( t.value, 'ID' )
+
+        if t.type != 'ID':
+            return t
+
+        # cast the id to a js_reserved token if its found in the dict
+        t.type = js_reserved.get( t.value, 'ID' )
         return t
 
 
@@ -576,7 +590,14 @@ def js_processor( file_path, script_vars={}, compress=False ):
     code = parser.parse( code, lexer=lexer )
 
     if compress:
-        pass
+        cmd = 'java -jar {0}/tools/yui-compressor/yuicompressor-2.4.8.jar --type js'.format( os.path.dirname( __file__ ) )
+
+        proc = sp.Popen( cmd, stdout=sp.PIPE, stdin=sp.PIPE, shell=True )
+        proc.stdin.write( code.encode() )
+
+        output, error = proc.communicate()
+
+        code = output.decode( 'utf-8' )
 
     return code
 
