@@ -104,15 +104,22 @@ if __name__ == '__main__':
     import sys
 
     def main(argv):
-        path = None
+        path     = None
+        compress = False
 
         if len( argv ) == 0:
             print( "You must specify a file to process", file=sys.stderr )
             return
 
-        path = argv[0]
+        for arg in argv:
+          args = arg.split( ':', 1 )
+          if len( args ) == 1:
+            compress = True if arg == 'compress' else compress
 
-        data = process_file( path, compress=False )
+          else:
+            path = args[1] if args[0] == 'file' else path
+
+        data = process_file( path, compress=compress )
         print( data )
 
     main( sys.argv[1:] )
