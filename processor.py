@@ -6,6 +6,7 @@
 import os
 import sys
 import re
+from base64 import b64encode
 import subprocess as sp
 import urllib3
 
@@ -37,6 +38,7 @@ def process_file( file_path, script_vars={}, compress=False, escape=None ):
     handler = {
         'htm':  html_processor,
         'html': html_processor,
+        'svg':  svg_processor,
         'sass': sass_processor,
         'css':  css_processor,
         'js':   js_processor
@@ -56,6 +58,7 @@ def process_file( file_path, script_vars={}, compress=False, escape=None ):
 
 
 def import_file( filepath ):
+    base64 = False
     # global http
 
     # if filepath.startswith( 'http://' )
@@ -67,12 +70,22 @@ def import_file( filepath ):
     # TODO: proto = file:// for files from root
 
 
+    if filepath.startswith('base64:'):
+        base64   = True
+        filepath = filepath[7:]
+
+
     if filepath.startswith( '/' ):
         filepath = filepath[1:]
     else:
         filepath = '{0}/{1}'.format( p.lexer.dir_path, filepath )
 
-    return process_file( filepath, compress=True, escape="'" )
+    data = process_file( filepath, compress=True, escape="'" )
+
+    if base64:
+        data = b64encode(data.encode()).decode('utf-8')
+
+    return data
 
 
 
@@ -509,6 +522,31 @@ def sass_processor( file_path, script_vars={}, compress=False ):
         css = css.replace( '\n', '' )
 
     return css
+
+
+
+
+################################################################################
+# SVG Processor ################################################################
+################################################################################
+
+
+
+
+def svg_processor(file_path, script_vars={}, compress=False):
+    ''''''
+
+    try:
+        svg = open( file_path, 'r').read()
+    except (OSError, IOError) as e:
+        print(e, file=sys.stderr)
+        exit(1)
+
+    if compress:
+        #TODO: work out some better compression if possible
+        svg = svg.replace('\n', '').replace('\r', '')
+
+    return svg
 
 
 
