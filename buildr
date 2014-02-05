@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+
 '''
-buildr is a simple JavaScript pre-processor for web applications. It also allows
-the embedding of compressed css, sass, html and other formats. The
+buildr is a simple JavaScript pre-processor for web applications. It also
+allows the embedding of compressed css, sass, html and other formats. The
 pre-processing language is developed with python ply.
 
-There are a number of dependencies: python3 ( & urllib3 ), sass ( & ruby ), java
+There are a number of dependencies: python3 ( & urllib3 ), sass ( & ruby )
+and java
 
 
 
@@ -101,25 +103,24 @@ from processor import process_file
 
 
 if __name__ == '__main__':
-    import sys
 
     def main(argv):
-        path     = None
+        path = None
         compress = False
 
-        if len( argv ) == 0:
-            print( "You must specify a file to process", file=sys.stderr )
-            return
+        if len(argv) == 0:
+            sys.stderr.write("You must specify a file to process")
+            exit(1)
 
         for arg in argv:
-          args = arg.split( ':', 1 )
-          if len( args ) == 1:
-            compress = True if arg == 'compress' else compress
+            args = arg.split(':', 1)
+            if len(args) == 1:
+                compress = True if arg == 'compress' else compress
 
-          else:
-            path = args[1] if args[0] == 'file' else path
+            else:
+                path = args[1] if args[0] == 'file' else path
 
-        data = process_file( path, compress=compress )
-        print( data )
+        data = process_file(path, compress=compress)
+        print(data)
 
-    main( sys.argv[1:] )
+    main(sys.argv[1:])
