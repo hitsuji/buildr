@@ -38,6 +38,7 @@ def process_file( file_path, script_vars={}, compress=False, escape=None ):
     handler = {
         'htm':  html_processor,
         'html': html_processor,
+        'hbs':  html_processor,
         'svg':  svg_processor,
         'sass': sass_processor,
         'css':  css_processor,
