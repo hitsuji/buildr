@@ -20,6 +20,17 @@ global_parser = None
 tokens = None
 
 
+def stderr(msg, kill=0):
+    sys.stdout.flush()
+    sys.stderr.write(msg)
+    if kill != 0:
+        exit(kill)
+
+
+def stdout(msg):
+    sys.stdout.write(msg)
+
+
 def process_file(file_path, script_vars={}, compress=False, escape=None):
     '''This is essentially a router for matching file extensions with the
     appropriate processor. If no appropriate processor is available
@@ -52,7 +63,7 @@ def process_file(file_path, script_vars={}, compress=False, escape=None):
     return content
 
 
-def import_file(filepath):
+def import_file(filepath, dirpath):
     base64 = False
 
     # Base 64 encode the imported file
@@ -64,7 +75,9 @@ def import_file(filepath):
     if filepath.startswith('/'):
         filepath = filepath[1:]
     else:
-        filepath = '{0}/{1}'.format(p.lexer.dir_path, filepath)
+        stderr(dirpath)
+        stderr(filepath)
+        filepath = '{0}/{1}'.format(dirpath, filepath)
 
     data = process_file(filepath, compress=True, escape="'")
 
@@ -85,10 +98,9 @@ def include_file(filepath, dirpath, script_vars):
         response = http.request('GET', filepath)
 
         if response.status != 200:
-            msg = 'Error while including: {0}, status: {1}' \
-                .format(filepath, response.status)
-            print(msg, file=sys.stderr)
-            exit(1)
+            msg = 'Error while including: {0}, status: {1}'
+            msg = msg.format(filepath, response.status)
+            stderr(msg, 1)
 
         # assume the file is utf-8 encoded unless otherwise stated in the
         # content type
@@ -152,7 +164,8 @@ def create_lexer(file_path, script_vars):
     # A list of js reserved ids that we'll recognise in buildr
     js_reserved = {
         'window':    'STRING',
-        'undefined': 'STRING'
+        'undefined': 'STRING',
+        '$':         'STRING'
     }
 
     tokens = [
@@ -161,16 +174,16 @@ def create_lexer(file_path, script_vars):
         'NEW_LINE',
         'COMMENT',
         'SEPARATOR',
-        # 'LPAREN',
-        # 'RPAREN',
+        'LPAREN',
+        'RPAREN',
         'STRING',
         'ID'] + list(reserved.values())
 
     t_DELIMITER = r';'
     t_SEPARATOR = r','
     t_COMMENT = r'\#.*?\n'
-    # t_LPAREN    = r'\('
-    # t_RPAREN    = r'\)'
+    t_LPAREN = r'\('
+    t_RPAREN = r'\)'
 
     def t_NEW_LINE(t):
         r'\n'
@@ -219,7 +232,8 @@ def create_lexer(file_path, script_vars):
 
     #error processor
     def t_error(t):
-        print('Unknown text "{0}"'.format(t.value[0]), file=sys.stderr)
+        msg = 'Unknown text "%s"' % t.value[0]
+        stderr(msg)
 
     global_lexer = lex.lex()
 
@@ -303,7 +317,7 @@ def create_parser():
 
             source, value = match.group(0), match.group(1)
 
-            value = import_file(value)
+            value = import_file(value, p.lexer.dir_path)
 
             string = string.replace(source, value, 1)
 
@@ -311,63 +325,45 @@ def create_parser():
 
     ## Function scopes
 
-    # empty scope params
     def p_begin_scope(p):
-        '''begin_scope : SCOPE_BEGIN delimiter
-                       | SCOPE_BEGIN new_line'''
+        '''begin_scope : SCOPE_BEGIN LPAREN RPAREN
+                       | begin_scope_p RPAREN
+                       | begin_scope new_line
+                       | begin_scope delimiter'''
 
-        p[0] = ''
+        p[0] = '' if len(p) == 4 else p[1]
+
+    def p_begin_scope_p1(p):
+        '''begin_scope_p : SCOPE_BEGIN LPAREN string'''
+
+        p[0] = p[3]
+
+    def p_begin_scope_p2(p):
+        '''begin_scope_p : begin_scope_p separator string'''
+
+        p[0] = '%s, %s' % (p[1], p[3])
 
     def p_end_scope(p):
-        '''end_scope : SCOPE_END delimiter
-                     | SCOPE_END new_line'''
+        '''end_scope : SCOPE_END LPAREN RPAREN
+                     | end_scope_p RPAREN'''
 
-        p[0] = ''
+        p[0] = '' if len(p) == 4 else p[1]
 
-    #scopes with params
-    def p_begin_scope_params_1(p):
-        'begin_scope_params : SCOPE_BEGIN string'
+    def p_end_scope_p1(p):
+        '''end_scope_p : SCOPE_END LPAREN string'''
 
-        p[0] = p[2]
+        p[0] = p[3]
 
-    def p_begin_scope_params_2(p):
-        'begin_scope_params : begin_scope_params separator string'
+    def p_end_scope_p2(p):
+        '''end_scope_p : end_scope_p separator string'''
 
-        p[0] = p[1] + ',' + p[3]
-
-    def p_begin_scope_with_params(p):
-        '''begin_scope : begin_scope_params delimiter
-                       | begin_scope_params new_line'''
-
-        p[0] = p[1]
-
-    def p_end_scope_params_1(p):
-        'end_scope_params : SCOPE_END string'
-
-        p[0] = p[2]
-
-    def p_end_scope_params_2(p):
-        'end_scope_params : end_scope_params separator string'
-
-        p[0] = p[1] + ',' + p[3]
-
-    def p_end_scope_with_params(p):
-        '''end_scope : end_scope_params delimiter
-                     | end_scope_params new_line'''
-
-        p[0] = p[1]
-
-    #clear any excess delimiters
-    def p_begin_scope_delimiter(p):
-        '''begin_scope : begin_scope delimiter
-                       | begin_scope new_line'''
-        p[0] = p[1]
+        p[0] = '%s, %s' % (p[1], p[3])
 
     # join the scopes
     def p_scope(p):
         'block : begin_scope output end_scope'
 
-        p[0] = ';(function({0}){{\n{1}\n}})({2});\n'.format(p[1], p[2], p[3])
+        p[0] = ';(function(%s){\n%s\n})(%s);\n' % (p[1], p[2], p[3])
 
     def p_separator(p):
         '''separator : separator new_line
@@ -470,8 +466,7 @@ def svg_processor(file_path, script_vars={}, compress=False):
     try:
         svg = open(file_path, 'r').read()
     except (OSError, IOError) as e:
-        print(e, file=sys.stderr)
-        exit(1)
+        sys.stderr(repr(e), 1)
 
     if compress:
         #TODO: work out some better compression if possible
@@ -492,8 +487,7 @@ def html_processor(file_path, script_vars={}, compress=False):
     try:
         source = open(file_path, 'r').read()
     except (OSError, IOError) as e:
-        print(e, file=sys.stderr)
-        exit(1)
+        stderr(repr(e), 1)
 
     if compress:
         # we'll use the html compressor in /tools
@@ -540,8 +534,7 @@ def js_processor(file_path, script_vars={}, compress=False):
     try:
         source = open(file_path, 'r').read()
     except (OSError, IOError) as e:
-        print(e, file=sys.stderr)
-        exit(1)
+        stderr(repr(e), 1)
 
     code = enclose_js(source)
     code = parser.parse(code, lexer=lexer)
